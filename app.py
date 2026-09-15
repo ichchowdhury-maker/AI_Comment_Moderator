@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import joblib
 import scipy.sparse
@@ -1609,4 +1608,3 @@ st.caption(
     "🛡️ AI Comment Moderator | "
     "Machine Learning Based Moderation System"
 )
-```

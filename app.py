@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import joblib
 import scipy.sparse
@@ -20,7 +21,6 @@ st.set_page_config(
 
 # =========================================================
 # PRIVACY POLICY PAGE
-# IMPORTANT: KEEP THIS BEFORE FACEBOOK CALLBACK
 # =========================================================
 
 if st.query_params.get("page") == "privacy":
@@ -139,19 +139,6 @@ st.markdown(
         margin-bottom: 25px;
     }
 
-    .status-box {
-        padding: 18px;
-        border-radius: 12px;
-        margin-top: 10px;
-    }
-
-    .facebook-box {
-        padding: 20px;
-        border-radius: 14px;
-        border: 1px solid rgba(128,128,128,0.25);
-        margin-bottom: 20px;
-    }
-
     </style>
     """,
     unsafe_allow_html=True
@@ -166,9 +153,12 @@ GRAPH_API_VERSION = "v26.0"
 
 
 def get_secret(name, default=""):
+
     try:
         return st.secrets.get(name, default)
+
     except Exception:
+
         return default
 
 
@@ -199,6 +189,12 @@ if "oauth_state" not in st.session_state:
 
 if "facebook_connected" not in st.session_state:
     st.session_state.facebook_connected = False
+
+if "facebook_comments" not in st.session_state:
+    st.session_state.facebook_comments = []
+
+if "moderation_results" not in st.session_state:
+    st.session_state.moderation_results = []
 
 
 # =========================================================
@@ -232,7 +228,7 @@ except Exception:
     st.error("❌ Model could not be loaded.")
 
     st.info(
-        "Make sure these files exist inside the models folder:"
+        "Make sure these files exist inside the models folder."
     )
 
     st.code(
@@ -248,7 +244,7 @@ models/
 
 
 # =========================================================
-# PREDICTION FUNCTION
+# AI PREDICTION
 # =========================================================
 
 def predict_comment(text):
@@ -260,7 +256,10 @@ def predict_comment(text):
     char_features = char_vectorizer.transform([text])
 
     features = scipy.sparse.hstack(
-        [word_features, char_features]
+        [
+            word_features,
+            char_features
+        ]
     )
 
     probabilities = model.predict_proba(features)[0]
@@ -278,7 +277,11 @@ def predict_comment(text):
         for i in range(len(classes))
     }
 
-    return label, confidence, probability_dict
+    return (
+        label,
+        confidence,
+        probability_dict
+    )
 
 
 # =========================================================
@@ -296,6 +299,7 @@ def create_facebook_login_url():
     if not META_REDIRECT_URI:
         return None
 
+    # Generate OAuth state
     state = secrets.token_urlsafe(32)
 
     st.session_state.oauth_state = state
@@ -340,20 +344,24 @@ def exchange_code_for_user_token(code):
     )
 
     try:
+
         data = response.json()
+
     except Exception:
+
         data = {
             "error": "Invalid response from Facebook."
         }
 
     if response.status_code != 200:
+
         return None, data
 
     return data.get("access_token"), data
 
 
 # =========================================================
-# GET USER'S PAGES
+# GET MANAGED PAGES
 # =========================================================
 
 def get_managed_pages(user_access_token):
@@ -376,16 +384,334 @@ def get_managed_pages(user_access_token):
     )
 
     try:
+
         data = response.json()
+
     except Exception:
+
         data = {
             "error": "Invalid response from Facebook."
         }
 
     if response.status_code != 200:
+
         return [], data
 
     return data.get("data", []), data
+
+
+# =========================================================
+# GET FACEBOOK PAGE POSTS
+# =========================================================
+
+def get_page_posts(page_id, page_access_token):
+
+    url = (
+        f"https://graph.facebook.com/"
+        f"{GRAPH_API_VERSION}/{page_id}/posts"
+    )
+
+    params = {
+        "access_token": page_access_token,
+        "fields": "id,message,created_time",
+        "limit": 25
+    }
+
+    response = requests.get(
+        url,
+        params=params,
+        timeout=30
+    )
+
+    try:
+
+        data = response.json()
+
+    except Exception:
+
+        data = {
+            "error": "Invalid response from Facebook."
+        }
+
+    if response.status_code != 200:
+
+        return [], data
+
+    return data.get("data", []), data
+
+
+# =========================================================
+# GET COMMENTS FROM POST
+# =========================================================
+
+def get_post_comments(
+    post_id,
+    page_access_token
+):
+
+    url = (
+        f"https://graph.facebook.com/"
+        f"{GRAPH_API_VERSION}/{post_id}/comments"
+    )
+
+    params = {
+        "access_token": page_access_token,
+        "fields": (
+            "id,message,from,created_time,"
+            "parent"
+        ),
+        "limit": 100
+    }
+
+    response = requests.get(
+        url,
+        params=params,
+        timeout=30
+    )
+
+    try:
+
+        data = response.json()
+
+    except Exception:
+
+        data = {
+            "error": "Invalid response from Facebook."
+        }
+
+    if response.status_code != 200:
+
+        return [], data
+
+    return data.get("data", []), data
+
+
+# =========================================================
+# HIDE FACEBOOK COMMENT
+# =========================================================
+
+def hide_facebook_comment(
+    comment_id,
+    page_access_token
+):
+
+    url = (
+        f"https://graph.facebook.com/"
+        f"{GRAPH_API_VERSION}/{comment_id}"
+    )
+
+    params = {
+        "access_token": page_access_token,
+        "is_hidden": "true"
+    }
+
+    response = requests.post(
+        url,
+        params=params,
+        timeout=30
+    )
+
+    try:
+
+        data = response.json()
+
+    except Exception:
+
+        data = {
+            "error": "Invalid response from Facebook."
+        }
+
+    return response.status_code == 200, data
+
+
+# =========================================================
+# DELETE FACEBOOK COMMENT
+# =========================================================
+
+def delete_facebook_comment(
+    comment_id,
+    page_access_token
+):
+
+    url = (
+        f"https://graph.facebook.com/"
+        f"{GRAPH_API_VERSION}/{comment_id}"
+    )
+
+    params = {
+        "access_token": page_access_token
+    }
+
+    response = requests.delete(
+        url,
+        params=params,
+        timeout=30
+    )
+
+    try:
+
+        data = response.json()
+
+    except Exception:
+
+        data = {
+            "message": "Comment deleted."
+        }
+
+    return response.status_code == 200, data
+
+
+# =========================================================
+# FETCH ALL PAGE COMMENTS
+# =========================================================
+
+def fetch_page_comments(
+    page_id,
+    page_access_token
+):
+
+    posts, post_response = get_page_posts(
+        page_id,
+        page_access_token
+    )
+
+    if not posts:
+
+        return [], post_response
+
+    all_comments = []
+
+    for post in posts:
+
+        post_id = post.get("id")
+
+        if not post_id:
+            continue
+
+        comments, comment_response = (
+            get_post_comments(
+                post_id,
+                page_access_token
+            )
+        )
+
+        for comment in comments:
+
+            comment["post_id"] = post_id
+
+            comment["post_message"] = (
+                post.get("message", "")
+            )
+
+            all_comments.append(comment)
+
+    return all_comments, None
+
+
+# =========================================================
+# MODERATE FACEBOOK COMMENTS
+# =========================================================
+
+def moderate_facebook_comments(
+    comments,
+    page_access_token,
+    auto_hide=False
+):
+
+    results = []
+
+    for comment in comments:
+
+        comment_id = comment.get("id")
+
+        message = comment.get(
+            "message",
+            ""
+        )
+
+        if not message.strip():
+
+            continue
+
+        try:
+
+            label, confidence, probabilities = (
+                predict_comment(message)
+            )
+
+        except Exception as e:
+
+            results.append(
+                {
+                    "id": comment_id,
+                    "comment": message,
+                    "label": "ERROR",
+                    "confidence": 0,
+                    "action": str(e)
+                }
+            )
+
+            continue
+
+        action = "ALLOW"
+
+        if label == "TOXIC":
+
+            action = "HIDE / REVIEW"
+
+        elif label == "SPAM":
+
+            action = "HIDE / REVIEW"
+
+        elif label == "PROMO":
+
+            action = "ALLOW / REVIEW"
+
+        # -------------------------------------------------
+        # AUTOMATIC HIDE
+        # -------------------------------------------------
+
+        hidden = False
+
+        if (
+            auto_hide
+            and label in ["TOXIC", "SPAM"]
+            and confidence >= 70
+            and comment_id
+        ):
+
+            success, hide_response = (
+                hide_facebook_comment(
+                    comment_id,
+                    page_access_token
+                )
+            )
+
+            hidden = success
+
+            if success:
+
+                action = "HIDDEN"
+
+            else:
+
+                action = (
+                    "HIDE FAILED"
+                )
+
+        results.append(
+            {
+                "id": comment_id,
+                "comment": message,
+                "label": label,
+                "confidence": confidence,
+                "action": action,
+                "hidden": hidden,
+                "probabilities": probabilities
+            }
+        )
+
+    return results
 
 
 # =========================================================
@@ -409,98 +735,121 @@ if facebook_error:
 
     st.query_params.clear()
 
-
 elif facebook_code:
+
+    # -----------------------------------------------------
+    # IMPORTANT:
+    # OAuth state validation
+    # -----------------------------------------------------
 
     expected_state = st.session_state.get(
         "oauth_state"
     )
 
-    if not expected_state or facebook_state != expected_state:
+    # If state does not match, do not continue.
+    if (
+        not expected_state
+        or not facebook_state
+        or facebook_state != expected_state
+    ):
 
         st.error(
-            "❌ Security check failed. "
-            "Please try Facebook Login again."
+            "❌ Facebook Login session expired. "
+            "Please click Connect Facebook again."
         )
+
+        st.session_state.oauth_state = None
 
         st.query_params.clear()
 
-    elif not META_APP_SECRET:
+        st.stop()
+
+    # -----------------------------------------------------
+    # APP SECRET CHECK
+    # -----------------------------------------------------
+
+    if not META_APP_SECRET:
 
         st.error(
             "❌ META_APP_SECRET is not configured."
         )
 
-    else:
+        st.query_params.clear()
 
-        with st.spinner(
-            "Connecting your Facebook account..."
-        ):
+        st.stop()
 
-            try:
+    # -----------------------------------------------------
+    # TOKEN EXCHANGE
+    # -----------------------------------------------------
 
-                user_token, token_response = (
-                    exchange_code_for_user_token(
-                        facebook_code
+    with st.spinner(
+        "Connecting your Facebook account..."
+    ):
+
+        try:
+
+            user_token, token_response = (
+                exchange_code_for_user_token(
+                    facebook_code
+                )
+            )
+
+            if not user_token:
+
+                st.error(
+                    "❌ Could not obtain Facebook access token."
+                )
+
+                st.json(token_response)
+
+            else:
+
+                st.session_state.facebook_user_token = (
+                    user_token
+                )
+
+                pages, page_response = (
+                    get_managed_pages(
+                        user_token
                     )
                 )
 
-                if not user_token:
+                if pages:
 
-                    st.error(
-                        "❌ Could not obtain Facebook access token."
+                    st.session_state.facebook_pages = (
+                        pages
                     )
 
-                    st.json(token_response)
+                    st.session_state.facebook_connected = (
+                        True
+                    )
+
+                    st.success(
+                        "✅ Facebook connected successfully!"
+                    )
 
                 else:
 
-                    st.session_state.facebook_user_token = (
-                        user_token
+                    st.warning(
+                        "Facebook login worked, "
+                        "but no managed Pages were returned."
                     )
 
-                    pages, page_response = (
-                        get_managed_pages(
-                            user_token
-                        )
-                    )
+                    if page_response:
 
-                    if pages:
+                        st.json(page_response)
 
-                        st.session_state.facebook_pages = pages
+        except Exception as e:
 
-                        st.session_state.facebook_connected = True
+            st.error(
+                "❌ Facebook connection failed."
+            )
 
-                        st.success(
-                            "✅ Facebook connected successfully!"
-                        )
+            st.caption(str(e))
 
-                    else:
+    st.session_state.oauth_state = None
 
-                        st.warning(
-                            "Facebook login worked, "
-                            "but no managed Pages were returned."
-                        )
-
-                        st.info(
-                            "Make sure the Facebook account "
-                            "has the required Page permissions."
-                        )
-
-                        if page_response:
-                            st.json(page_response)
-
-            except Exception as e:
-
-                st.error(
-                    "❌ Facebook connection failed."
-                )
-
-                st.caption(str(e))
-
-        st.session_state.oauth_state = None
-
-        st.query_params.clear()
+    st.query_params.clear()
 
 
 # =========================================================
@@ -524,10 +873,13 @@ st.markdown(
 
 
 # =========================================================
-# FACEBOOK CONNECT SECTION
+# FACEBOOK CONNECTION
 # =========================================================
 
-st.subheader("🔵 Facebook Page Connection")
+st.subheader(
+    "🔵 Facebook Page Connection"
+)
+
 
 if st.session_state.facebook_connected:
 
@@ -540,7 +892,10 @@ if st.session_state.facebook_connected:
     if pages:
 
         page_names = [
-            page.get("name", "Unnamed Page")
+            page.get(
+                "name",
+                "Unnamed Page"
+            )
             for page in pages
         ]
 
@@ -555,7 +910,9 @@ if st.session_state.facebook_connected:
 
         selected_page = pages[selected_index]
 
-        st.session_state.selected_page = selected_page
+        st.session_state.selected_page = (
+            selected_page
+        )
 
         st.info(
             f"Connected Page: "
@@ -563,21 +920,20 @@ if st.session_state.facebook_connected:
         )
 
         st.caption(
-            "Page connection is ready for the next "
-            "comment moderation/API integration step."
+            "Page connection is ready."
         )
 
     else:
 
         st.warning(
-            "No Pages found for this Facebook account."
+            "No Pages found."
         )
 
 else:
 
     st.write(
-        "Connect your Facebook account to select a "
-        "Page that you manage."
+        "Connect your Facebook account to select "
+        "a Page that you manage."
     )
 
     login_url = create_facebook_login_url()
@@ -596,13 +952,239 @@ else:
             "Facebook Login is not configured yet."
         )
 
-        st.caption(
-            "Configure META_APP_ID, META_CONFIG_ID "
-            "and META_REDIRECT_URI in Streamlit Secrets."
+
+# =========================================================
+# FACEBOOK COMMENT MODERATION
+# =========================================================
+
+if st.session_state.selected_page:
+
+    st.divider()
+
+    st.subheader(
+        "📘 Facebook Page Comment Moderation"
+    )
+
+    page = st.session_state.selected_page
+
+    page_id = page.get("id")
+
+    page_access_token = page.get(
+        "access_token"
+    )
+
+    st.info(
+        f"Connected Page: "
+        f"**{page.get('name', 'Unknown')}**"
+    )
+
+    # -----------------------------------------------------
+    # FETCH COMMENTS
+    # -----------------------------------------------------
+
+    fetch_button = st.button(
+        "🔄 Fetch Facebook Comments",
+        use_container_width=True
+    )
+
+    if fetch_button:
+
+        if not page_id or not page_access_token:
+
+            st.error(
+                "❌ Page access information is missing."
+            )
+
+        else:
+
+            with st.spinner(
+                "Fetching Facebook comments..."
+            ):
+
+                comments, response = (
+                    fetch_page_comments(
+                        page_id,
+                        page_access_token
+                    )
+                )
+
+            if comments:
+
+                st.session_state.facebook_comments = (
+                    comments
+                )
+
+                st.success(
+                    f"✅ {len(comments)} comments fetched."
+                )
+
+            else:
+
+                st.warning(
+                    "No comments were found."
+                )
+
+                if response:
+
+                    st.json(response)
+
+    # -----------------------------------------------------
+    # SHOW COMMENTS
+    # -----------------------------------------------------
+
+    comments = (
+        st.session_state.facebook_comments
+    )
+
+    if comments:
+
+        st.write(
+            f"### 💬 Comments ({len(comments)})"
         )
 
+        for index, comment_data in enumerate(
+            comments,
+            start=1
+        ):
 
-st.divider()
+            message = comment_data.get(
+                "message",
+                ""
+            )
+
+            comment_id = comment_data.get(
+                "id"
+            )
+
+            st.write(
+                f"**{index}.** {message}"
+            )
+
+            st.caption(
+                f"Comment ID: {comment_id}"
+            )
+
+            st.divider()
+
+        # -------------------------------------------------
+        # AI MODERATION
+        # -------------------------------------------------
+
+        st.write(
+            "### 🤖 AI Moderation"
+        )
+
+        auto_hide = st.checkbox(
+            "Automatically hide TOXIC/SPAM comments "
+            "with confidence ≥ 70%",
+            value=False
+        )
+
+        moderate_button = st.button(
+            "🤖 Analyze Facebook Comments",
+            use_container_width=True
+        )
+
+        if moderate_button:
+
+            with st.spinner(
+                "AI is analyzing Facebook comments..."
+            ):
+
+                results = (
+                    moderate_facebook_comments(
+                        comments,
+                        page_access_token,
+                        auto_hide=auto_hide
+                    )
+                )
+
+            st.session_state.moderation_results = (
+                results
+            )
+
+            st.success(
+                "✅ Facebook comments analyzed."
+            )
+
+        # -------------------------------------------------
+        # MODERATION RESULTS
+        # -------------------------------------------------
+
+        results = (
+            st.session_state.moderation_results
+        )
+
+        if results:
+
+            st.write(
+                "### 📊 Moderation Results"
+            )
+
+            for result in results:
+
+                label = result.get(
+                    "label"
+                )
+
+                confidence = result.get(
+                    "confidence",
+                    0
+                )
+
+                action = result.get(
+                    "action",
+                    "ALLOW"
+                )
+
+                comment_text = result.get(
+                    "comment",
+                    ""
+                )
+
+                if label == "TOXIC":
+
+                    st.error(
+                        f"🔴 TOXIC • "
+                        f"{confidence:.2f}%"
+                    )
+
+                elif label == "SPAM":
+
+                    st.warning(
+                        f"🟠 SPAM • "
+                        f"{confidence:.2f}%"
+                    )
+
+                elif label == "PROMO":
+
+                    st.info(
+                        f"🔵 PROMO • "
+                        f"{confidence:.2f}%"
+                    )
+
+                elif label == "NORMAL":
+
+                    st.success(
+                        f"🟢 NORMAL • "
+                        f"{confidence:.2f}%"
+                    )
+
+                else:
+
+                    st.error(
+                        f"❌ {label}"
+                    )
+
+                st.write(
+                    f"**Comment:** {comment_text}"
+                )
+
+                st.write(
+                    f"**Action:** {action}"
+                )
+
+                st.divider()
 
 
 # =========================================================
@@ -611,7 +1193,9 @@ st.divider()
 
 with st.sidebar:
 
-    st.header("⚙️ Moderation Settings")
+    st.header(
+        "⚙️ Moderation Settings"
+    )
 
     toxic_threshold = st.slider(
         "🔴 Toxic Threshold",
@@ -639,31 +1223,47 @@ with st.sidebar:
 
     st.divider()
 
-    st.header("📊 Categories")
+    st.header(
+        "📊 Categories"
+    )
 
-    st.write("🔴 **TOXIC**")
+    st.write(
+        "🔴 **TOXIC**"
+    )
+
     st.caption(
         "Abusive, insulting or threatening comments."
     )
 
-    st.write("🟠 **SPAM**")
+    st.write(
+        "🟠 **SPAM**"
+    )
+
     st.caption(
         "Spam, scam or suspicious messages."
     )
 
-    st.write("🔵 **PROMO**")
+    st.write(
+        "🔵 **PROMO**"
+    )
+
     st.caption(
         "Promotional or advertising comments."
     )
 
-    st.write("🟢 **NORMAL**")
+    st.write(
+        "🟢 **NORMAL**"
+    )
+
     st.caption(
         "Normal comments and conversations."
     )
 
     st.divider()
 
-    st.header("🤖 Model")
+    st.header(
+        "🤖 Model"
+    )
 
     st.caption(
         "TF-IDF + Logistic Regression"
@@ -707,34 +1307,45 @@ normal_count = sum(
 )
 
 
-stat1, stat2, stat3, stat4, stat5 = st.columns(5)
+stat1, stat2, stat3, stat4, stat5 = (
+    st.columns(5)
+)
 
 
 with stat1:
+
     st.metric(
         "Total",
         total_comments
     )
 
+
 with stat2:
+
     st.metric(
         "🔴 Toxic",
         toxic_count
     )
 
+
 with stat3:
+
     st.metric(
         "🟠 Spam",
         spam_count
     )
 
+
 with stat4:
+
     st.metric(
         "🔵 Promo",
         promo_count
     )
 
+
 with stat5:
+
     st.metric(
         "🟢 Normal",
         normal_count
@@ -745,10 +1356,12 @@ st.divider()
 
 
 # =========================================================
-# COMMENT INPUT
+# MANUAL COMMENT ANALYSIS
 # =========================================================
 
-st.subheader("💬 Analyze a Comment")
+st.subheader(
+    "💬 Analyze a Comment"
+)
 
 comment = st.text_area(
     "Enter comment",
@@ -789,7 +1402,7 @@ if clear:
 
 
 # =========================================================
-# ANALYSIS
+# MANUAL ANALYSIS
 # =========================================================
 
 if analyze:
@@ -807,10 +1420,6 @@ if analyze:
             label, confidence, probabilities = (
                 predict_comment(comment)
             )
-
-            # ---------------------------------------------
-            # MODERATION DECISION
-            # ---------------------------------------------
 
             if label == "TOXIC":
 
@@ -854,10 +1463,6 @@ if analyze:
                 decision_icon = "🟢"
 
 
-            # ---------------------------------------------
-            # SAVE HISTORY
-            # ---------------------------------------------
-
             st.session_state.history.insert(
                 0,
                 {
@@ -869,17 +1474,15 @@ if analyze:
             )
 
 
-            # ---------------------------------------------
-            # RESULT
-            # ---------------------------------------------
-
             st.divider()
 
             st.subheader(
                 "🤖 AI Analysis"
             )
 
-            result1, result2, result3 = st.columns(3)
+            result1, result2, result3 = (
+                st.columns(3)
+            )
 
 
             with result1:
@@ -925,11 +1528,9 @@ if analyze:
                 )
 
 
-            # ---------------------------------------------
-            # CONFIDENCE
-            # ---------------------------------------------
-
-            st.write("### Confidence")
+            st.write(
+                "### Confidence"
+            )
 
             st.progress(
                 min(
@@ -942,10 +1543,6 @@ if analyze:
             )
 
 
-            # ---------------------------------------------
-            # COMMENT
-            # ---------------------------------------------
-
             st.write(
                 "### 💬 Comment"
             )
@@ -954,10 +1551,6 @@ if analyze:
                 comment.strip()
             )
 
-
-            # ---------------------------------------------
-            # CATEGORY PROBABILITIES
-            # ---------------------------------------------
 
             st.write(
                 "### 📊 Category Probabilities"
@@ -974,7 +1567,9 @@ if analyze:
 
                 if category in probabilities:
 
-                    value = probabilities[category]
+                    value = probabilities[
+                        category
+                    ]
 
                     st.write(
                         f"**{category}: "
@@ -999,80 +1594,8 @@ if analyze:
                 "analyzing the comment."
             )
 
-            st.caption(str(e))
-
-
-# =========================================================
-# FACEBOOK PAGE STATUS
-# =========================================================
-
-if st.session_state.selected_page:
-
-    st.divider()
-
-    st.subheader(
-        "📘 Connected Facebook Page"
-    )
-
-    page = st.session_state.selected_page
-
-    page_col1, page_col2 = st.columns(2)
-
-    with page_col1:
-
-        st.write(
-            f"**Page:** "
-            f"{page.get('name', 'Unknown')}"
-        )
-
-    with page_col2:
-
-        st.write(
-            f"**Page ID:** "
-            f"{page.get('id', 'Unknown')}"
-        )
-
-
-# =========================================================
-# HISTORY
-# =========================================================
-
-if st.session_state.history:
-
-    st.divider()
-
-    st.subheader(
-        "📜 Recent Analysis"
-    )
-
-    for index, item in enumerate(
-        st.session_state.history[:10],
-        start=1
-    ):
-
-        with st.expander(
-            f"{index}. {item['label']} • "
-            f"{item['confidence']:.2f}%"
-        ):
-
-            st.write(
-                f"**Comment:** "
-                f"{item['comment']}"
-            )
-
-            st.write(
-                f"**Category:** "
-                f"{item['label']}"
-            )
-
-            st.write(
-                f"**Confidence:** "
-                f"{item['confidence']:.2f}%"
-            )
-
-            st.write(
-                f"**Decision:** "
-                f"{item['decision']}"
+            st.caption(
+                str(e)
             )
 
 
@@ -1086,3 +1609,4 @@ st.caption(
     "🛡️ AI Comment Moderator | "
     "Machine Learning Based Moderation System"
 )
+```

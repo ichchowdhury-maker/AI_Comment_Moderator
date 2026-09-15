@@ -1086,4 +1086,3 @@ st.caption(
     "🛡️ AI Comment Moderator | "
     "Machine Learning Based Moderation System"
 )
-```

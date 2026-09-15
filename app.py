@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import joblib
 import scipy.sparse
@@ -16,6 +17,107 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+
+# =========================================================
+# PRIVACY POLICY PAGE
+# IMPORTANT: KEEP THIS BEFORE FACEBOOK CALLBACK
+# =========================================================
+
+if st.query_params.get("page") == "privacy":
+
+    st.title("🔒 Privacy Policy")
+
+    st.write("Last updated: September 2026")
+
+    st.markdown("""
+## 1. Information We Access
+
+AI Comment Moderator may access information necessary to
+connect and manage Facebook Pages that the user is authorized
+to manage.
+
+This may include:
+
+- Facebook Page name
+- Facebook Page ID
+- Authorization information
+- Comments required for moderation
+
+## 2. How We Use Information
+
+Information is used only to provide the application's
+functionality, including:
+
+- Connecting Facebook Pages
+- Analyzing comments
+- Detecting Toxic, Spam, Promo and Normal comments
+- Performing authorized moderation actions
+
+## 3. Facebook Data
+
+The application uses Meta/Facebook APIs for Facebook Page
+integration.
+
+We do not sell Facebook user data or use Facebook data for
+advertising purposes.
+
+## 4. Access Tokens
+
+Facebook access tokens are sensitive credentials and are used
+only for authorized Facebook API operations.
+
+Users should never share their Facebook passwords or access
+tokens with other people.
+
+## 5. Data Storage
+
+The application is designed to minimize the storage of
+personal information.
+
+Information may be processed when necessary to provide
+moderation functionality.
+
+## 6. Data Sharing
+
+We do not sell or rent personal information to third parties.
+
+## 7. Data Security
+
+Reasonable technical measures are used to protect application
+credentials and information.
+
+However, no internet service can guarantee absolute security.
+
+## 8. User Control
+
+Users can stop using the application and remove its Facebook
+permissions through their Facebook account settings.
+
+## 9. Changes to This Privacy Policy
+
+This Privacy Policy may be updated when the application or
+its features change.
+
+## 10. Contact
+
+For questions about this Privacy Policy or AI Comment Moderator,
+please contact the application developer.
+
+## 11. Third-Party Services
+
+The application uses Meta/Facebook services and APIs.
+
+Their use is also subject to Meta's applicable terms and policies.
+""")
+
+    st.divider()
+
+    st.caption(
+        "AI Comment Moderator | Privacy Policy"
+    )
+
+    st.stop()
 
 
 # =========================================================
@@ -238,10 +340,15 @@ def exchange_code_for_user_token(code):
         timeout=30
     )
 
-    if response.status_code != 200:
-        return None, response.json()
+    try:
+        data = response.json()
+    except Exception:
+        data = {
+            "error": "Invalid response from Facebook."
+        }
 
-    data = response.json()
+    if response.status_code != 200:
+        return None, data
 
     return data.get("access_token"), data
 
@@ -269,10 +376,15 @@ def get_managed_pages(user_access_token):
         timeout=30
     )
 
-    if response.status_code != 200:
-        return [], response.json()
+    try:
+        data = response.json()
+    except Exception:
+        data = {
+            "error": "Invalid response from Facebook."
+        }
 
-    data = response.json()
+    if response.status_code != 200:
+        return [], data
 
     return data.get("data", []), data
 
@@ -391,90 +503,7 @@ elif facebook_code:
 
         st.query_params.clear()
 
-# =========================================================
-# PRIVACY POLICY PAGE
-# =========================================================
 
-if st.query_params.get("page") == "privacy":
-
-    st.title("🔒 Privacy Policy")
-
-    st.write("Last updated: September 2026")
-
-    st.markdown("""
-    ## 1. Information We Access
-
-    AI Comment Moderator may access information necessary to
-    connect and manage Facebook Pages that the user is authorized
-    to manage.
-
-    This may include Facebook Page name, Page ID, authorization
-    information, and comments required for moderation.
-
-    ## 2. How We Use Information
-
-    Information is used only to provide the application's
-    functionality, including:
-
-    - Connecting Facebook Pages
-    - Analyzing comments
-    - Detecting Toxic, Spam, Promo and Normal comments
-    - Performing authorized moderation actions
-
-    ## 3. Facebook Data
-
-    The application uses Meta/Facebook APIs for Facebook Page
-    integration.
-
-    We do not sell Facebook user data or use Facebook data for
-    advertising purposes.
-
-    ## 4. Access Tokens
-
-    Facebook access tokens are sensitive credentials and are used
-    only for authorized Facebook API operations.
-
-    Users should never share their Facebook passwords or access
-    tokens with other people.
-
-    ## 5. Data Storage
-
-    The application is designed to minimize the storage of
-    personal information. Information may be processed when
-    necessary to provide moderation functionality.
-
-    ## 6. Data Sharing
-
-    We do not sell or rent personal information to third parties.
-
-    ## 7. Data Security
-
-    Reasonable technical measures are used to protect application
-    credentials and information. However, no internet service can
-    guarantee absolute security.
-
-    ## 8. User Control
-
-    Users can stop using the application and remove its Facebook
-    permissions through their Facebook account settings.
-
-    ## 9. Changes to This Privacy Policy
-
-    This Privacy Policy may be updated when the application or its
-    features change.
-
-    ## 10. Contact
-
-    For questions about this Privacy Policy or AI Comment Moderator,
-    please contact the application developer.
-
-    ## 11. Third-Party Services
-
-    The application uses Meta/Facebook services and APIs.
-    Their use is also subject to Meta's applicable terms and policies.
-    """)
-
-    st.stop()
 # =========================================================
 # HEADER
 # =========================================================
@@ -1058,3 +1087,4 @@ st.caption(
     "🛡️ AI Comment Moderator | "
     "Machine Learning Based Moderation System"
 )
+```

@@ -3,6 +3,10 @@ import joblib
 import scipy.sparse
 import requests
 import secrets
+import time
+import hmac
+import hashlib
+import base64
 from urllib.parse import urlencode
 
 
@@ -152,12 +156,9 @@ GRAPH_API_VERSION = "v26.0"
 
 
 def get_secret(name, default=""):
-
     try:
         return st.secrets.get(name, default)
-
     except Exception:
-
         return default
 
 
@@ -182,9 +183,6 @@ if "facebook_pages" not in st.session_state:
 
 if "selected_page" not in st.session_state:
     st.session_state.selected_page = None
-
-if "oauth_state" not in st.session_state:
-    st.session_state.oauth_state = None
 
 if "facebook_connected" not in st.session_state:
     st.session_state.facebook_connected = False
@@ -284,6 +282,91 @@ def predict_comment(text):
 
 
 # =========================================================
+# SECURE OAUTH STATE
+# =========================================================
+
+def create_signed_state():
+
+    if not META_APP_SECRET:
+        return None
+
+    random_part = secrets.token_urlsafe(32)
+
+    timestamp = str(int(time.time()))
+
+    payload = f"{timestamp}.{random_part}"
+
+    signature = hmac.new(
+        META_APP_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+
+    state = (
+        base64.urlsafe_b64encode(
+            f"{payload}.{signature}".encode("utf-8")
+        )
+        .decode("utf-8")
+        .rstrip("=")
+    )
+
+    return state
+
+
+def verify_signed_state(state):
+
+    if not state or not META_APP_SECRET:
+        return False
+
+    try:
+
+        padding = "=" * (-len(state) % 4)
+
+        decoded = base64.urlsafe_b64decode(
+            state + padding
+        ).decode("utf-8")
+
+        parts = decoded.split(".")
+
+        if len(parts) != 3:
+            return False
+
+        timestamp = parts[0]
+        random_part = parts[1]
+        received_signature = parts[2]
+
+        payload = f"{timestamp}.{random_part}"
+
+        expected_signature = hmac.new(
+            META_APP_SECRET.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(
+            received_signature,
+            expected_signature
+        ):
+            return False
+
+        state_time = int(timestamp)
+
+        current_time = int(time.time())
+
+        # State valid for 10 minutes
+        if current_time - state_time > 600:
+            return False
+
+        if state_time > current_time + 60:
+            return False
+
+        return True
+
+    except Exception:
+        return False
+
+
+# =========================================================
 # FACEBOOK LOGIN URL
 # =========================================================
 
@@ -298,10 +381,13 @@ def create_facebook_login_url():
     if not META_REDIRECT_URI:
         return None
 
-    # Generate OAuth state
-    state = secrets.token_urlsafe(32)
+    if not META_APP_SECRET:
+        return None
 
-    st.session_state.oauth_state = state
+    state = create_signed_state()
+
+    if not state:
+        return None
 
     params = {
         "client_id": META_APP_ID,
@@ -343,7 +429,6 @@ def exchange_code_for_user_token(code):
     )
 
     try:
-
         data = response.json()
 
     except Exception:
@@ -353,7 +438,6 @@ def exchange_code_for_user_token(code):
         }
 
     if response.status_code != 200:
-
         return None, data
 
     return data.get("access_token"), data
@@ -383,7 +467,6 @@ def get_managed_pages(user_access_token):
     )
 
     try:
-
         data = response.json()
 
     except Exception:
@@ -393,7 +476,6 @@ def get_managed_pages(user_access_token):
         }
 
     if response.status_code != 200:
-
         return [], data
 
     return data.get("data", []), data
@@ -423,7 +505,6 @@ def get_page_posts(page_id, page_access_token):
     )
 
     try:
-
         data = response.json()
 
     except Exception:
@@ -433,7 +514,6 @@ def get_page_posts(page_id, page_access_token):
         }
 
     if response.status_code != 200:
-
         return [], data
 
     return data.get("data", []), data
@@ -456,8 +536,7 @@ def get_post_comments(
     params = {
         "access_token": page_access_token,
         "fields": (
-            "id,message,from,created_time,"
-            "parent"
+            "id,message,from,created_time,parent"
         ),
         "limit": 100
     }
@@ -469,7 +548,6 @@ def get_post_comments(
     )
 
     try:
-
         data = response.json()
 
     except Exception:
@@ -479,7 +557,6 @@ def get_post_comments(
         }
 
     if response.status_code != 200:
-
         return [], data
 
     return data.get("data", []), data
@@ -511,7 +588,6 @@ def hide_facebook_comment(
     )
 
     try:
-
         data = response.json()
 
     except Exception:
@@ -548,7 +624,6 @@ def delete_facebook_comment(
     )
 
     try:
-
         data = response.json()
 
     except Exception:
@@ -575,7 +650,6 @@ def fetch_page_comments(
     )
 
     if not posts:
-
         return [], post_response
 
     all_comments = []
@@ -629,7 +703,6 @@ def moderate_facebook_comments(
         )
 
         if not message.strip():
-
             continue
 
         try:
@@ -666,10 +739,6 @@ def moderate_facebook_comments(
 
             action = "ALLOW / REVIEW"
 
-        # -------------------------------------------------
-        # AUTOMATIC HIDE
-        # -------------------------------------------------
-
         hidden = False
 
         if (
@@ -694,9 +763,7 @@ def moderate_facebook_comments(
 
             else:
 
-                action = (
-                    "HIDE FAILED"
-                )
+                action = "HIDE FAILED"
 
         results.append(
             {
@@ -730,34 +797,23 @@ if facebook_error:
         "❌ Facebook Login was cancelled or failed."
     )
 
-    st.session_state.oauth_state = None
-
     st.query_params.clear()
 
 elif facebook_code:
 
     # -----------------------------------------------------
-    # IMPORTANT:
-    # OAuth state validation
+    # SECURE STATE VALIDATION
     # -----------------------------------------------------
 
-    expected_state = st.session_state.get(
-        "oauth_state"
-    )
-
-    # If state does not match, do not continue.
-    if (
-        not expected_state
-        or not facebook_state
-        or facebook_state != expected_state
-    ):
+    if not verify_signed_state(facebook_state):
 
         st.error(
-            "❌ Facebook Login session expired. "
-            "Please click Connect Facebook again."
+            "❌ Facebook Login request expired or is invalid."
         )
 
-        st.session_state.oauth_state = None
+        st.info(
+            "Please click Connect Facebook and try again."
+        )
 
         st.query_params.clear()
 
@@ -835,7 +891,6 @@ elif facebook_code:
                     )
 
                     if page_response:
-
                         st.json(page_response)
 
         except Exception as e:
@@ -845,8 +900,6 @@ elif facebook_code:
             )
 
             st.caption(str(e))
-
-    st.session_state.oauth_state = None
 
     st.query_params.clear()
 
@@ -1024,7 +1077,6 @@ if st.session_state.selected_page:
                 )
 
                 if response:
-
                     st.json(response)
 
     # -----------------------------------------------------
@@ -1479,6 +1531,7 @@ if analyze:
                 "🤖 AI Analysis"
             )
 
+
             result1, result2, result3 = (
                 st.columns(3)
             )
@@ -1555,12 +1608,14 @@ if analyze:
                 "### 📊 Category Probabilities"
             )
 
+
             probability_order = [
                 "NORMAL",
                 "TOXIC",
                 "SPAM",
                 "PROMO"
             ]
+
 
             for category in probability_order:
 
